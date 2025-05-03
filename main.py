@@ -7,7 +7,7 @@ from file_manager import setup_directories, save_uploaded_file, get_file_info
 
 def install_package(use_stable_ts):
     """Install the required package based on the use_stable_ts flag."""
-    package_name = "stable-whisper" if use_stable_ts else "openai-whisper"
+    package_name = "stable-ts" if use_stable_ts else "openai-whisper"
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
         print(f"Successfully installed {package_name}")
