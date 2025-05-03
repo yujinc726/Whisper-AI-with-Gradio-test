@@ -2,39 +2,35 @@ import gradio as gr
 from whisper_model import load_model, cleanup_model
 from subtitle_processor import arrange_subtitles
 from file_manager import setup_directories, save_uploaded_file, get_file_info
+import os
+import uuid
 
-def transcribe(file_info, decode_options, model, use_stable_ts):
+def transcribe(file_info, decode_options, model):
     """Transcribe the audio file using the Whisper model."""
     print(f'Transcribing "{file_info["file_name"]}{file_info["file_extension"]}"...')
-    if use_stable_ts:
-        result = model.transcribe(file_info["file_path"], **decode_options)
-    else:
-        result = model.transcribe(file_info["file_path"], **decode_options)
+    result = model.transcribe(file_info["file_path"], **decode_options)
     print(f'Finished transcribing.')
     return result
 
-def process_audio(audio_file, language, remove_repeated, merge, model_size, use_stable_ts):
-    """Process the uploaded audio file and generate subtitles."""
-    if not audio_file:
-        return None, None, None, None
-
+def process_audio(audio_files, language, remove_repeated, merge, model_size):
+    """Process multiple uploaded audio files and generate subtitles."""
+    if not audio_files:
+        return [gr.update(visible=False)] * 4
+    
     try:
         upload_dir = setup_directories()
-        file_info = save_uploaded_file(audio_file, upload_dir)
-        if not file_info:
-            return None, None, None, None
-
+        outputs = []
+        
+        # Load the selected model once
+        model = load_model(model_size)
+        
         decode_options = {
             "task": "transcribe",
             "fp16": True,
             "language": language if language != "Auto" else None,
             "verbose": False,
+            "word_timestamps": True
         }
-        if use_stable_ts:
-            decode_options["word_timestamps"] = True
-        else:
-            decode_options["word_timestamps"] = True  # openai-whisper also supports this
-
         srt_options = {
             "segment_level": False,
             "word_level": True
@@ -44,62 +40,72 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, use_
             "merge": merge
         }
 
-        # Load the selected model
-        model = load_model(model_size, use_stable_ts)
+        for audio_file in audio_files:
+            file_info = save_uploaded_file(audio_file, upload_dir)
+            if not file_info:
+                continue
 
-        # Transcribe
-        subtitles = transcribe(file_info, decode_options, model, use_stable_ts)
-        suffix = "stable-ts" if use_stable_ts else "whisper"
-        subtitles_path = f'download/{file_info["file_name"]}_{model_size}_{suffix}_word_ts.srt'
+            # Transcribe
+            subtitles = transcribe(file_info, decode_options, model)
+            raw_subtitles_path = f'download/{file_info["file_name"]}_{model_size}_stable-ts_word_ts.srt'
+            subtitles.to_srt_vtt(raw_subtitles_path, **srt_options)
 
-        # Handle subtitle output differences
-        if use_stable_ts:
-            subtitles.to_srt_vtt(subtitles_path, **srt_options)
-        else:
-            # For openai-whisper, convert result to SRT manually
-            with open(subtitles_path, 'w', encoding='utf-8') as f:
-                for i, segment in enumerate(subtitles.get('segments', []), 1):
-                    start = segment['start']
-                    end = segment['end']
-                    text = segment.get('text', '').strip()
-                    if not text:
-                        continue
-                    f.write(f"{i}\n")
-                    f.write(f"{format_timestamp(start)} --> {format_timestamp(end)}\n")
-                    f.write(f"{text}\n\n")
+            # Read raw subtitles content
+            with open(raw_subtitles_path, 'r', encoding='utf-8') as f:
+                raw_subtitles_content = f.read()
 
-        # Read raw subtitles content
-        with open(subtitles_path, 'r', encoding='utf-8') as f:
-            raw_subtitles_content = f.read()
+            # Arrange subtitles
+            arranged_subtitles = arrange_subtitles(raw_subtitles_path, **arrange_options)
+            arranged_path = f'download/{file_info["file_name"]}_{model_size}_stable-ts_word_ts_arranged.srt'
+            with open(arranged_path, 'w', encoding='utf-8') as f:
+                f.writelines(arranged_subtitles)
 
-        # Arrange subtitles
-        arranged_subtitles = arrange_subtitles(subtitles_path, **arrange_options)
-        arranged_path = f'download/{file_info["file_name"]}_{model_size}_{suffix}_word_ts_arranged.srt'
-        with open(arranged_path, 'w', encoding='utf-8') as f:
-            f.writelines(arranged_subtitles)
+            # Read arranged subtitles content
+            with open(arranged_path, 'r', encoding='utf-8') as f:
+                arranged_subtitles_content = f.read()
 
-        # Read arranged subtitles content
-        with open(arranged_path, 'r', encoding='utf-8') as f:
-            arranged_subtitles_content = f.read()
+            # Create unique component IDs
+            raw_text_id = f"raw_text_{uuid.uuid4()}"
+            arranged_text_id = f"arranged_text_{uuid.uuid4()}"
 
-        return (
-            raw_subtitles_content,
-            subtitles_path,
-            arranged_subtitles_content,
-            arranged_path
-        )
+            # Create output components for this file
+            file_outputs = [
+                gr.Markdown(f"### Results for {file_info['file_name']}{file_info['file_extension']}"),
+                gr.Textbox(
+                    label="Raw Subtitles Content",
+                    value=raw_subtitles_content,
+                    lines=10,
+                    max_lines=10,
+                    interactive=True,
+                    elem_classes="textbox-fixed",
+                    elem_id=raw_text_id
+                ),
+                gr.DownloadButton(
+                    label="Download Raw Subtitles (SRT)",
+                    value=raw_subtitles_path
+                ),
+                gr.Textbox(
+                    label="Arranged Subtitles Content",
+                    value=arranged_subtitles_content,
+                    lines=10,
+                    max_lines=10,
+                    interactive=True,
+                    elem_classes="textbox-fixed",
+                    elem_id=arranged_text_id
+                ),
+                gr.DownloadButton(
+                    label="Download Arranged Subtitles (SRT)",
+                    value=arranged_path
+                ),
+                gr.Markdown("---")
+            ]
+            outputs.extend(file_outputs)
+
+        return outputs
+
     except Exception as e:
-        print(f"Error processing audio file: {str(e)}")
-        return None, None, None, None
-
-def format_timestamp(seconds):
-    """Format timestamp for SRT files."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds = seconds % 60
-    milliseconds = int((seconds % 1) * 1000)
-    seconds = int(seconds)
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+        print(f"Error processing audio files: {str(e)}")
+        return [gr.update(visible=False)] * 4
 
 # Custom CSS to control Textbox size
 custom_css = """
@@ -120,7 +126,7 @@ with gr.Blocks(css=custom_css) as demo:
         # Left column for settings and upload
         with gr.Column(scale=1):
             gr.Markdown("### Settings")
-            audio_input = gr.File(label="Upload Audio File (mp3, wav, m4a)")
+            audio_input = gr.Files(label="Upload Audio Files (mp3, wav, m4a)", file_types=[".mp3", ".wav", ".m4a"])
             with gr.Row():
                 model_size = gr.Dropdown(
                     choices=["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "turbo"],
@@ -132,7 +138,6 @@ with gr.Blocks(css=custom_css) as demo:
                     value="Auto",
                     label="Language"
                 )
-            use_stable_ts = gr.Checkbox(label="Use Stable-TS", value=False)
             with gr.Accordion(label="Arrange Options", open=False):
                 remove_repeated = gr.Checkbox(label="Remove Repeated Words", value=True)
                 merge = gr.Checkbox(label="Merge into Complete Sentences", value=True)
@@ -140,29 +145,12 @@ with gr.Blocks(css=custom_css) as demo:
         
         # Right column for outputs
         with gr.Column(scale=1):
-            gr.Markdown("#### Raw Subtitles")
-            raw_subtitles_text = gr.Textbox(
-                label="Raw Subtitles Content",
-                lines=10,
-                max_lines=10,
-                interactive=True,
-                elem_classes="textbox-fixed"
-            )
-            raw_subtitles = gr.DownloadButton(label="Download Raw Subtitles (SRT)")
-            gr.Markdown("#### Arranged Subtitles")
-            arranged_subtitles_text = gr.Textbox(
-                label="Arranged Subtitles Content",
-                lines=10,
-                max_lines=10,
-                interactive=True,
-                elem_classes="textbox-fixed"
-            )
-            arranged_subtitles = gr.DownloadButton(label="Download Arranged Subtitles (SRT)")
+            output_components = gr.Blocks()
 
     submit_btn.click(
         fn=process_audio,
-        inputs=[audio_input, language, remove_repeated, merge, model_size, use_stable_ts],
-        outputs=[raw_subtitles_text, raw_subtitles, arranged_subtitles_text, arranged_subtitles]
+        inputs=[audio_input, language, remove_repeated, merge, model_size],
+        outputs=output_components
     )
 
 # Launch Gradio interface
