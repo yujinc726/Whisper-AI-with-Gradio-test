@@ -15,7 +15,7 @@ def transcribe(file_info, decode_options, model):
 def process_audio(audio_files, language, remove_repeated, merge, model_size):
     """Process multiple uploaded audio files and generate subtitles."""
     if not audio_files:
-        return [gr.update(visible=False)] * 4
+        return {"components": [], "visible": False}
     
     try:
         upload_dir = setup_directories()
@@ -64,48 +64,20 @@ def process_audio(audio_files, language, remove_repeated, merge, model_size):
             with open(arranged_path, 'r', encoding='utf-8') as f:
                 arranged_subtitles_content = f.read()
 
-            # Create unique component IDs
-            raw_text_id = f"raw_text_{uuid.uuid4()}"
-            arranged_text_id = f"arranged_text_{uuid.uuid4()}"
+            # Store output data for this file
+            outputs.append({
+                "title": f"Results for {file_info['file_name']}{file_info['file_extension']}",
+                "raw_subtitles": raw_subtitles_content,
+                "raw_path": raw_subtitles_path,
+                "arranged_subtitles": arranged_subtitles_content,
+                "arranged_path": arranged_path
+            })
 
-            # Create output components for this file
-            file_outputs = [
-                gr.Markdown(f"### Results for {file_info['file_name']}{file_info['file_extension']}"),
-                gr.Textbox(
-                    label="Raw Subtitles Content",
-                    value=raw_subtitles_content,
-                    lines=10,
-                    max_lines=10,
-                    interactive=True,
-                    elem_classes="textbox-fixed",
-                    elem_id=raw_text_id
-                ),
-                gr.DownloadButton(
-                    label="Download Raw Subtitles (SRT)",
-                    value=raw_subtitles_path
-                ),
-                gr.Textbox(
-                    label="Arranged Subtitles Content",
-                    value=arranged_subtitles_content,
-                    lines=10,
-                    max_lines=10,
-                    interactive=True,
-                    elem_classes="textbox-fixed",
-                    elem_id=arranged_text_id
-                ),
-                gr.DownloadButton(
-                    label="Download Arranged Subtitles (SRT)",
-                    value=arranged_path
-                ),
-                gr.Markdown("---")
-            ]
-            outputs.extend(file_outputs)
-
-        return outputs
+        return {"components": outputs, "visible": True}
 
     except Exception as e:
         print(f"Error processing audio files: {str(e)}")
-        return [gr.update(visible=False)] * 4
+        return {"components": [], "visible": False}
 
 # Custom CSS to control Textbox size
 custom_css = """
@@ -145,12 +117,97 @@ with gr.Blocks(css=custom_css) as demo:
         
         # Right column for outputs
         with gr.Column(scale=1):
-            output_components = gr.Blocks()
+            output_state = gr.State({"components": [], "visible": False})
+            with gr.Column(visible=False) as output_column:
+                # Create multiple output sets (up to 10 files for example)
+                output_components = []
+                for i in range(10):  # Support up to 10 files
+                    with gr.Group(visible=False) as file_output:
+                        title = gr.Markdown()
+                        raw_text = gr.Textbox(
+                            label="Raw Subtitles Content",
+                            lines=10,
+                            max_lines=10,
+                            interactive=True,
+                            elem_classes="textbox-fixed"
+                        )
+                        raw_download = gr.DownloadButton(label="Download Raw Subtitles (SRT)")
+                        arranged_text = gr.Textbox(
+                            label="Arranged Subtitles Content",
+                            lines=10,
+                            max_lines=10,
+                            interactive=True,
+                            elem_classes="textbox-fixed"
+                        )
+                        arranged_download = gr.DownloadButton(label="Download Arranged Subtitles (SRT)")
+                        separator = gr.Markdown("---")
+                    output_components.append({
+                        "group": file_output,
+                        "title": title,
+                        "raw_text": raw_text,
+                        "raw_download": raw_download,
+                        "arranged_text": arranged_text,
+                        "arranged_download": arranged_download,
+                        "separator": separator
+                    })
+
+    def update_outputs(state):
+        """Update output components based on state."""
+        updates = []
+        for i, comp in enumerate(output_components):
+            if i < len(state["components"]):
+                file_data = state["components"][i]
+                updates.extend([
+                    gr.update(value=file_data["title"], visible=True),  # title
+                    gr.update(value=file_data["raw_subtitles"], visible=True),  # raw_text
+                    gr.update(value=file_data["raw_path"], visible=True),  # raw_download
+                    gr.update(value=file_data["arranged_subtitles"], visible=True),  # arranged_text
+                    gr.update(value=file_data["arranged_path"], visible=True),  # arranged_download
+                    gr.update(visible=True),  # separator
+                    gr.update(visible=True)  # group
+                ])
+            else:
+                updates.extend([
+                    gr.update(visible=False),  # title
+                    gr.update(visible=False),  # raw_text
+                    gr.update(visible=False),  # raw_download
+                    gr.update(visible=False),  # arranged_text
+                    gr.update(visible=False),  # arranged_download
+                    gr.update(visible=False),  # separator
+                    gr.update(visible=False)  # group
+                ])
+        updates.append(gr.update(visible=len(state["components"]) > 0))  # output_column
+        return updates
 
     submit_btn.click(
         fn=process_audio,
         inputs=[audio_input, language, remove_repeated, merge, model_size],
-        outputs=output_components
+        outputs=[output_state],
+        _js="""
+        async (audio_files, language, remove_repeated, merge, model_size) => {
+            const result = await gradioApp().callFunction(
+                null,
+                audio_files,
+                language,
+                remove_repeated,
+                merge,
+                model_size
+            );
+            return result;
+        }
+        """
+    ).then(
+        fn=update_outputs,
+        inputs=[output_state],
+        outputs=[comp for c in output_components for comp in [
+            c["title"],
+            c["raw_text"],
+            c["raw_download"],
+            c["arranged_text"],
+            c["arranged_download"],
+            c["separator"],
+            c["group"]
+        ]] + [output_column]
     )
 
 # Launch Gradio interface
