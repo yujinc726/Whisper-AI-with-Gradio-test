@@ -1,24 +1,15 @@
 import gradio as gr
-import subprocess
-import sys
 from whisper_model import load_model, cleanup_model
 from subtitle_processor import arrange_subtitles
 from file_manager import setup_directories, save_uploaded_file, get_file_info
 
-def install_package(use_stable_ts):
-    """Install the required package based on the use_stable_ts flag."""
-    package_name = "stable-ts" if use_stable_ts else "openai-whisper"
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
-        print(f"Successfully installed {package_name}")
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install {package_name}: {str(e)}")
-        raise
-
-def transcribe(file_info, decode_options, model):
+def transcribe(file_info, decode_options, model, use_stable_ts):
     """Transcribe the audio file using the Whisper model."""
     print(f'Transcribing "{file_info["file_name"]}{file_info["file_extension"]}"...')
-    result = model.transcribe(file_info["file_path"], **decode_options)
+    if use_stable_ts:
+        result = model.transcribe(file_info["file_path"], **decode_options)
+    else:
+        result = model.transcribe(file_info["file_path"], **decode_options)
     print(f'Finished transcribing.')
     return result
 
@@ -28,9 +19,6 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, use_
         return None, None, None, None
 
     try:
-        # Install the required package
-        install_package(use_stable_ts)
-
         upload_dir = setup_directories()
         file_info = save_uploaded_file(audio_file, upload_dir)
         if not file_info:
@@ -41,8 +29,12 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, use_
             "fp16": True,
             "language": language if language != "Auto" else None,
             "verbose": False,
-            "word_timestamps": True
         }
+        if use_stable_ts:
+            decode_options["word_timestamps"] = True
+        else:
+            decode_options["word_timestamps"] = True  # openai-whisper also supports this
+
         srt_options = {
             "segment_level": False,
             "word_level": True
@@ -56,10 +48,25 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, use_
         model = load_model(model_size, use_stable_ts)
 
         # Transcribe
-        subtitles = transcribe(file_info, decode_options, model)
+        subtitles = transcribe(file_info, decode_options, model, use_stable_ts)
         suffix = "stable-ts" if use_stable_ts else "whisper"
         subtitles_path = f'download/{file_info["file_name"]}_{model_size}_{suffix}_word_ts.srt'
-        subtitles.to_srt_vtt(subtitles_path, **srt_options)
+
+        # Handle subtitle output differences
+        if use_stable_ts:
+            subtitles.to_srt_vtt(subtitles_path, **srt_options)
+        else:
+            # For openai-whisper, convert result to SRT manually
+            with open(subtitles_path, 'w', encoding='utf-8') as f:
+                for i, segment in enumerate(subtitles.get('segments', []), 1):
+                    start = segment['start']
+                    end = segment['end']
+                    text = segment.get('text', '').strip()
+                    if not text:
+                        continue
+                    f.write(f"{i}\n")
+                    f.write(f"{format_timestamp(start)} --> {format_timestamp(end)}\n")
+                    f.write(f"{text}\n\n")
 
         # Read raw subtitles content
         with open(subtitles_path, 'r', encoding='utf-8') as f:
@@ -84,6 +91,15 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, use_
     except Exception as e:
         print(f"Error processing audio file: {str(e)}")
         return None, None, None, None
+
+def format_timestamp(seconds):
+    """Format timestamp for SRT files."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    seconds = seconds % 60
+    milliseconds = int((seconds % 1) * 1000)
+    seconds = int(seconds)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
 # Custom CSS to control Textbox size
 custom_css = """
@@ -116,7 +132,7 @@ with gr.Blocks(css=custom_css) as demo:
                     value="Auto",
                     label="Language"
                 )
-            use_stable_ts = gr.Checkbox(label="Use Stable-TS", value=True)
+            use_stable_ts = gr.Checkbox(label="Use Stable-TS", value=False)
             with gr.Accordion(label="Arrange Options", open=False):
                 remove_repeated = gr.Checkbox(label="Remove Repeated Words", value=True)
                 merge = gr.Checkbox(label="Merge into Complete Sentences", value=True)
