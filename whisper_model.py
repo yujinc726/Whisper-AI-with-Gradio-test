@@ -14,14 +14,14 @@ def load_model(model_size, stable_ts):
     #     # Clear the existing model from memory
     #     del current_model
     #     torch.cuda.empty_cache()  # Clear GPU memory if applicable
-    if current_model is None:
-        print(f"Loading Whisper model: {model_size} {'(stable-ts)' if stable_ts else ''}")
-        if stable_ts:
-            current_model = stable_whisper.load_model(model_size)
-        else:
-            current_model = whisper.load_model(model_size)
-        current_model_size = model_size
-        current_stable_ts = stable_ts
+    #if current_model is None:
+    print(f"Loading Whisper model: {model_size} {'(stable-ts)' if stable_ts else ''}")
+    if stable_ts:
+        current_model = stable_whisper.load_model(model_size)
+    else:
+        current_model = whisper.load_model(model_size)
+    current_model_size = model_size
+    current_stable_ts = stable_ts
     return current_model
 
 def cleanup_model():
