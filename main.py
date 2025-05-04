@@ -131,8 +131,8 @@ with gr.Blocks(css=custom_css) as demo:
                 merge = gr.Checkbox(label="Merge into Complete Sentences", value=True)
             prompt = gr.Textbox(
                 label = 'Prompt',
-                lines = 10,
-                max_lines = 10,
+                lines = 5,
+                max_lines = 5,
             )
             submit_btn = gr.Button("Generate Subtitles")
         
