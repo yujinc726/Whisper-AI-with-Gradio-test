@@ -59,7 +59,7 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, stab
         }
 
         # Load the selected model
-        model = load_model(model_size)
+        model = load_model(model_size, stable_ts)
 
         # Transcribe
         subtitles = transcribe(file_info, decode_options, model)
@@ -124,7 +124,7 @@ with gr.Blocks(css=custom_css) as demo:
                     value="Auto",
                     label="Language"
                 )
-            stable_ts = gr.Checkbox(label="stable_ts", value=True)
+            stable_ts = gr.Checkbox(label="stable-ts", value=True)
             with gr.Accordion(label="Arrange Options", open=False):
                 remove_repeated = gr.Checkbox(label="Remove Repeated Words", value=True)
                 merge = gr.Checkbox(label="Merge into Complete Sentences", value=True)
