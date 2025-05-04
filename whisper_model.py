@@ -9,7 +9,7 @@ current_stable_ts = None
 
 def load_model(model_size, stable_ts):
     """Load or reload the Whisper model based on the selected model size."""
-    global current_model, current_model_size, current_model_type
+    global current_model, current_model_size, current_stable_ts
     if current_model is not None and not(current_model_size == model_size and current_stable_ts == stable_ts):
         # Clear the existing model from memory
         del current_model
