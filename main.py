@@ -63,7 +63,7 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, stab
 
         # Transcribe
         subtitles = transcribe(file_info, decode_options, model)
-        subtitles_path = f'download/{file_info["file_name"]}_{model_size}_word_ts.srt'
+        subtitles_path = f'download/{file_info["file_name"]}_{model_size}_{"stable-ts" if stable_ts else ""}_word_ts.srt'
         if stable_ts:
             subtitles.to_srt_vtt(subtitles_path, **srt_options)
         else:
@@ -75,7 +75,7 @@ def process_audio(audio_file, language, remove_repeated, merge, model_size, stab
 
         # Arrange subtitles
         arranged_subtitles = arrange_subtitles(subtitles_path, **arrange_options)
-        arranged_path = f'download/{file_info["file_name"]}_{model_size}_{"stable-ts_" if stable_ts else ""}word_ts_arranged.srt'
+        arranged_path = f'download/{file_info["file_name"]}_{model_size}_{"stable-ts" if stable_ts else ""}_arranged.srt'
         with open(arranged_path, 'w', encoding='utf-8') as f:
             f.writelines(arranged_subtitles)
 
