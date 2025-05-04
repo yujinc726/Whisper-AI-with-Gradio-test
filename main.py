@@ -129,11 +129,11 @@ with gr.Blocks(css=custom_css) as demo:
             with gr.Accordion(label="Arrange Options", open=False):
                 remove_repeated = gr.Checkbox(label="Remove Repeated Words", value=True)
                 merge = gr.Checkbox(label="Merge into Complete Sentences", value=True)
-                prompt = gr.Textbox(
-                    label = 'Prompt',
-                    lines = 10,
-                    max_lines = 10,
-                )
+            prompt = gr.Textbox(
+                label = 'Prompt',
+                lines = 10,
+                max_lines = 10,
+            )
             submit_btn = gr.Button("Generate Subtitles")
         
         # Right column for outputs
